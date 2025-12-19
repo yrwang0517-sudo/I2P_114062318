@@ -1,0 +1,82 @@
+{
+  "map": [
+    {
+      "path": "map.tmx",
+      "enemy_trainers": [
+        { "x": 24, "y": 29, "classification": "stationary", "facing": "DOWN", "max_tiles": 2 },
+        { "x": 54, "y": 16, "classification": "stationary", "facing": "UP", "max_tiles": 2 },
+        { "x": 31, "y": 31, "classification": "stationary", "facing": "UP", "max_tiles": 2 }
+      ],
+      "teleport": [
+        { "x": 24, "y": 23, "destination": "gym.tmx"},
+        { "x": 24, "y": 24, "pair_id": "map_entrance"},
+        { "x": 16, "y": 28, "destination": "cave.tmx", "pair_id": "cave_to_map_entrance"},
+        { "x": 16, "y": 29, "pair_id": "cave_from_map"}
+      ],
+      "player": {
+        "x": 16,
+        "y": 30
+      }
+    },
+    {
+      "path": "gym.tmx",
+      "teleport": [
+        { "x": 11, "y": 14, "destination": "map.tmx", "pair_id": "map_entrance" },
+        { "x": 12, "y": 14, "destination": "map.tmx", "pair_id": "map_entrance" },
+        { "x": 13, "y": 14, "destination": "map.tmx", "pair_id": "map_entrance" }
+      ],
+      "roaming_mobs": [],
+      "enemy_trainers": [],
+      "player": {
+        "x": 12,
+        "y": 16
+      }
+    },
+    {
+      "path": "cave.tmx",
+      "teleport": [
+        { "x": 7, "y": 6, "destination": "map.tmx", "pair_id": "cave_from_map" }
+      ],
+      "enemy_trainers": [
+        { "x": 3, "y": 3, "classification": "stationary", "facing": "RIGHT", "max_tiles": 2 },
+        { "x": 10, "y": 4, "classification": "stationary", "facing": "DOWN", "max_tiles": 2 },
+        { "x": 5, "y": 8, "classification": "stationary", "facing": "UP", "max_tiles": 2 }
+      ],
+      "roaming_mobs": [],
+      "player": {
+        "x": 7,
+        "y": 7
+      }
+    }
+  ],
+  "current_map": "map.tmx",
+  "player": {
+    "x": 16,
+    "y": 30
+  },
+  "bag": {
+    "monsters": [
+      { "name": "Pikachu",   "hp": 85,  "max_hp": 100, "level": 25, "sprite_path": "menu_sprites/menusprite1.png" },
+      { "name": "Charizard", "hp": 150, "max_hp": 200, "level": 36, "sprite_path": "menu_sprites/menusprite2.png" },
+      { "name": "Blastoise", "hp": 120, "max_hp": 180, "level": 32, "sprite_path": "menu_sprites/menusprite3.png" },
+      { "name": "Venusaur",  "hp": 90,  "max_hp": 160, "level": 30, "sprite_path": "menu_sprites/menusprite4.png" },
+      { "name": "Gengar",    "hp": 110, "max_hp": 140, "level": 28, "sprite_path": "menu_sprites/menusprite5.png" },
+      { "name": "Dragonite", "hp": 180, "max_hp": 220, "level": 40, "sprite_path": "menu_sprites/menusprite6.png" },
+      { "name": "Alakazam", "hp": 95,  "max_hp": 125, "level": 33, "sprite_path": "menu_sprites/menusprite7.png" },
+      { "name": "Machamp",  "hp": 130, "max_hp": 170, "level": 35, "sprite_path": "menu_sprites/menusprite8.png" },
+      { "name": "Golem",    "hp": 105, "max_hp": 160, "level": 32, "sprite_path": "menu_sprites/menusprite9.png" },
+      { "name": "Arcanine", "hp": 115, "max_hp": 155, "level": 34, "sprite_path": "menu_sprites/menusprite10.png" },
+      { "name": "Lapras",   "hp": 130, "max_hp": 180, "level": 37, "sprite_path": "menu_sprites/menusprite11.png" },
+      { "name": "Snorlax",  "hp": 160, "max_hp": 200, "level": 38, "sprite_path": "menu_sprites/menusprite12.png" },
+      { "name": "Articuno", "hp": 140, "max_hp": 190, "level": 39, "sprite_path": "menu_sprites/menusprite13.png" },
+      { "name": "Zapdos",   "hp": 140, "max_hp": 190, "level": 39, "sprite_path": "menu_sprites/menusprite14.png" },
+      { "name": "Moltres",  "hp": 140, "max_hp": 190, "level": 39, "sprite_path": "menu_sprites/menusprite15.png" },
+      { "name": "Mewtwo",   "hp": 160, "max_hp": 220, "level": 45, "sprite_path": "menu_sprites/menusprite16.png" }
+    ],
+    "items": [
+      { "name": "Potion",      "count": 5,  "sprite_path": "ingame_ui/potion.png" },
+      { "name": "Coins",       "count": 99,  "sprite_path": "ingame_ui/coin.png" },
+      { "name": "Pokeball",    "count": 10, "sprite_path": "ingame_ui/ball.png" }
+    ]
+  }
+}

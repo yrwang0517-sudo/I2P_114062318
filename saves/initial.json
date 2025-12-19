@@ -1,0 +1,25 @@
+{
+  "map": [
+    {
+      "path": "map.tmx",
+      "enemy_trainers": [],
+      "teleport": [],
+      "player": { "x": 16, "y": 30 }
+    }
+  ],
+  "current_map": "map.tmx",
+  "player": { "x": 16, "y": 30 },
+  "bag": {
+    "monsters": [
+      { "name": "Pikachu", "hp": 85, "max_hp": 100, "level": 25, "sprite_path": "menu_sprites/menusprite1.png" }
+    ],
+    "items": [
+      { "name": "hp potion", "count": 5, "sprite_path": "ingame_ui/potion.png" },
+      { "name": "Coins", "count": 99, "sprite_path": "ingame_ui/coin.png" },
+      { "name": "Pokeball", "count": 10, "sprite_path": "ingame_ui/ball.png" },
+      { "name": "attack", "count": 5, "sprite_path": "ingame_ui/options1.png" },
+      { "name": "defense", "count": 5, "sprite_path": "ingame_ui/options2.png" },
+      { "name": "exp potion", "count": 5, "sprite_path": "ingame_ui/exp_potion.png" }
+    ]
+  }
+}
