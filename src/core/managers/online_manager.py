@@ -293,7 +293,7 @@ class OnlineManager:
             return False
         try:
             self._chat_out_queue.put_nowait(t)
-            return True
+            return True 
         except queue.Full:
             return False
 
