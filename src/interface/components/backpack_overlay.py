@@ -23,6 +23,30 @@ _NAME_TO_SPRITE = {
     "mewtwo": "menu_sprites/menusprite16.png",
 }
 
+# Level-based sprite evolution groups
+_EVOLVE_GROUPS = {
+    "1": {
+        "base": "menu_sprites/menusprite1.png",
+        "mid": "menu_sprites/menusprite2.png",
+        "high": "menu_sprites/menusprite3.png",
+    },
+    "7": {
+        "base": "menu_sprites/menusprite7.png",
+        "mid": "menu_sprites/menusprite8.png",
+        "high": "menu_sprites/menusprite9.png",
+    },
+    "12": {
+        "base": "menu_sprites/menusprite12.png",
+        "mid": "menu_sprites/menusprite13.png",
+        "high": "menu_sprites/menusprite14.png",
+    },
+    "16": {
+        "base": "menu_sprites/menusprite16.png",
+        "mid": "menu_sprites/menusprite16.png",
+        "high": "menu_sprites/menusprite16.png",
+    },
+}
+
 class BackpackOverlay:
     def __init__(self, items=None, monsters=None):
         self.is_active = False
@@ -48,6 +72,10 @@ class BackpackOverlay:
                 if not m.get("sprite_path"):
                     name = (m.get("name") or "").lower()
                     m["sprite_path"] = _NAME_TO_SPRITE.get(name, "menu_sprites/menusprite3.png")
+        except Exception:
+            pass
+        try:
+            self._apply_level_sprite_evolution_all()
         except Exception:
             pass
         # fallback mapping for item names/keys -> image path
@@ -249,6 +277,10 @@ class BackpackOverlay:
                             break
             except Exception:
                 pass
+        try:
+            self._apply_level_sprite_evolution_all()
+        except Exception:
+            pass
         # update hover index for cursor
         try:
             mx, my = input_manager.mouse_pos
@@ -694,3 +726,54 @@ class BackpackOverlay:
             pass
         # Draw level 50 tip on top
         self._draw_level_50_tip(screen)
+
+    def _sprite_group_by_path(self, path: str):
+        try:
+            p = (path or "").lower()
+            if "menusprite" in p:
+                for g, mp in _EVOLVE_GROUPS.items():
+                    if mp["base"] in p or mp["mid"] in p or mp["high"] in p:
+                        return g
+                # numeric fallback
+                import re
+                m = re.search(r"menusprite(\d+)", p)
+                if m:
+                    n = int(m.group(1))
+                    if n in (1, 2, 3):
+                        return "1"
+                    if n in (7, 8, 9):
+                        return "7"
+                    if n in (12, 13, 14):
+                        return "12"
+                    if n == 16:
+                        return "16"
+        except Exception:
+            return None
+        return None
+
+    def _apply_level_sprite_evolution(self, monster: dict):
+        try:
+            lvl = int(monster.get("level", 1))
+        except Exception:
+            lvl = 1
+        sp = monster.get("sprite_path") or ""
+        grp = self._sprite_group_by_path(sp)
+        if not grp:
+            return
+        mp = _EVOLVE_GROUPS.get(grp)
+        if not mp:
+            return
+        if lvl >= 100:
+            monster["sprite_path"] = mp["high"]
+        elif lvl >= 50:
+            monster["sprite_path"] = mp["mid"]
+        else:
+            monster["sprite_path"] = mp["base"]
+
+    def _apply_level_sprite_evolution_all(self):
+        mons = self.get_monsters() or []
+        for m in mons:
+            try:
+                self._apply_level_sprite_evolution(m)
+            except Exception:
+                continue

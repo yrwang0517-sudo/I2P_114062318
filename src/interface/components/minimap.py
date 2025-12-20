@@ -1,40 +1,64 @@
+# ============================================
+# 迷你地圖 (小地圖) 組件
+# 功能: 實時顯示當前地圖和玩家位置
+# 特性: 自動縮放、玩家標記、動態更新
+# ============================================
 import pygame as pg
 from src.utils import GameSettings
 from src.core.services import resource_manager
 
 class Minimap:
-    """Simple minimap: given a map object that exposes width,height and a surface or tile rendering,
-    we will render a scaled-down representation and a player marker.
-
-    This implementation expects the GameScene to provide:
-    - current_map: an object with attributes `width`, `height`, and a method `render_to_surface()`
-      or a surface at `current_map.surface`. If such methods aren't present, the minimap will
-    try to build a basic grid using tile size.
-    - player_tile_pos: (tx, ty) tile coordinates of the player on the current map.
-
-    If the project uses pytmx or custom map objects, adjust `get_map_surface` accordingly.
+    """迷你地圖 (小地圖) 組件
+    
+    顯示位置: 螢幕左上角
+    大小: 螢幕寬度的約 1/5
+    內容: 完整地圖的縮小版本 + 玩家位置標記
+    
+    依賴 GameScene 提供:
+    - current_map: 地圖物件，需具有 width、height、surface 等屬性
+    - player_tile_pos: (tx, ty) 玩家的瓷磚座標
+    
+    說明: 使用 pytmx 或自訂地圖物件時，需調整 _get_map_surface() 邏輯
     """
 
     def __init__(self, game_scene):
+        """初始化迷你地圖
+        
+        參數:
+            game_scene: 遊戲場景，用於存取地圖和玩家位置
+        """
         self.game_scene = game_scene
-        # minimap width is ~1/5 of screen width
+        
+        # ===== 尺寸和位置設定 =====
+        # 迷你地圖寬度約為螢幕寬度的 1/5
         self.width = max(120, GameSettings.SCREEN_WIDTH // 5)
-        # height will be computed based on current map aspect ratio; default to width
+        # 高度根據地圖寬高比動態計算
         self.height = self.width
-        # position at top-left with some padding
+        # 位置: 左上角，稍微向下向右以避開邊界
         self.x = 10
         self.y = 10
-        self.padding = 6
-        # background color and border
-        self.bg_color = (30, 30, 30, 200)
-        self.border_color = (0, 0, 0)
-        # cache last map id to avoid rebuilding surface each frame
-        self._last_map_id = None
-        self._map_surf = None
+        self.padding = 6  # 邊框內邊距
+        
+        # ===== 顏色設定 =====
+        self.bg_color = (30, 30, 30, 200)      # 背景: 深灰色半透明
+        self.border_color = (0, 0, 0)          # 邊框: 黑色
+        
+        # ===== 地圖快取 =====
+        # 存儲渲染後的地圖表面，避免每幀重新渲染
+        self._last_map_id = None               # 上次渲染的地圖 ID
+        self._map_surf = None                  # 快取的地圖表面
 
     def _get_map_surface(self):
-        """Try to get or build a surface representing the entire map. Tries several fallbacks.
-        Returns a pygame.Surface or None.
+        """取得或構建地圖表面 (整個地圖的像素圖片)
+        
+        嘗試多種方法獲取地圖表面:
+        1. 檢查地圖物件是否有預渲染的表面 (_surface 或 surface 屬性)
+        2. 呼叫地圖的 render_to_surface() 方法
+        3. 從瓷磚資料手動構建簡單的棋盤表面
+        
+        返回: pygame.Surface 物件或 None (無法構建)
+        
+        快取策略: 根據地圖 ID 快取表面，避免每幀重新渲染
         """
         gs = self.game_scene
         if not gs:
@@ -44,35 +68,41 @@ class Minimap:
         if not current_map:
             return None
 
+        # ===== 地圖 ID 識別 =====
+        # 用於判斷地圖是否改變，決定是否使用快取
         map_id = getattr(current_map, 'name', None) or getattr(current_map, 'map_id', None) or id(current_map)
         if map_id == self._last_map_id and self._map_surf is not None:
+            # 地圖未改變，直接返回快取表面
             return self._map_surf
 
-        # Attempt 1: if map has a pre-rendered surface attribute (Map._surface)
+        # ===== 方法 1: 使用地圖物件的表面屬性 =====
         surf = None
-        # support both public 'surface' and internal '_surface'
+        # 支援公開屬性 'surface' 和內部屬性 '_surface'
         if hasattr(current_map, '_surface') and isinstance(getattr(current_map, '_surface'), pg.Surface):
             surf = current_map._surface
         elif hasattr(current_map, 'surface') and isinstance(getattr(current_map, 'surface'), pg.Surface):
             surf = current_map.surface
-        # Attempt 2: if map has method to render to surface
+        
+        # ===== 方法 2: 呼叫地圖的渲染方法 =====
         elif hasattr(current_map, 'render_to_surface'):
             try:
                 surf = current_map.render_to_surface()
             except Exception:
                 surf = None
-        # Attempt 3: try to render from tile data (basic colored grid)
+        
+        # ===== 方法 3: 手動構建瓷磚棋盤 =====
         if surf is None:
             try:
-                tw = getattr(current_map, 'width', None)
-                th = getattr(current_map, 'height', None)
+                tw = getattr(current_map, 'width', None)              # 地圖瓷磚寬度
+                th = getattr(current_map, 'height', None)             # 地圖瓷磚高度
                 tile_size = getattr(current_map, 'tile_size', getattr(GameSettings, 'TILE_SIZE', 32))
                 if tw and th:
+                    # 建立地圖表面
                     surf = pg.Surface((tw * tile_size, th * tile_size))
-                    surf.fill((80, 80, 80))
-                    # draw simple grid blocks as placeholder
-                    col1 = (100, 150, 100)
-                    col2 = (80, 120, 80)
+                    surf.fill((80, 80, 80))  # 背景顏色
+                    # 繪製棋盤式瓷磚（用於視覺化）
+                    col1 = (100, 150, 100)  # 淡綠色
+                    col2 = (80, 120, 80)    # 深綠色
                     for y in range(th):
                         for x in range(tw):
                             r = pg.Rect(x * tile_size, y * tile_size, tile_size, tile_size)
@@ -83,13 +113,13 @@ class Minimap:
             except Exception:
                 surf = None
 
-        # cache and remember map id
+        # ===== 快取並更新尺寸 =====
         self._map_surf = surf
-        # if we got a real surf, update minimap height to maintain aspect ratio
+        # 如果成功建立表面，根據寬高比更新迷你地圖高度
         if surf is not None:
             try:
                 sw, sh = surf.get_size()
-                # compute height preserving aspect ratio
+                # 計算高度以保持寬高比
                 self.height = max(48, int((self.width * sh) / max(1, sw)))
             except Exception:
                 pass
@@ -97,7 +127,7 @@ class Minimap:
         return surf
 
     def update(self, dt):
-        # nothing heavy here; map surface cached in _get_map_surface
+        """更新迷你地圖 (目前為空，地圖表面快取於 _get_map_surface)"""
         pass
 
     def draw(self, screen):

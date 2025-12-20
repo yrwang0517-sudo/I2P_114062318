@@ -10,8 +10,8 @@
       "teleport": [
         { "x": 24, "y": 23, "destination": "gym.tmx"},
         { "x": 24, "y": 24, "pair_id": "map_entrance"},
-        { "x": 16, "y": 28, "destination": "cave.tmx", "pair_id": "cave_to_map_entrance"},
-        { "x": 16, "y": 29, "pair_id": "cave_from_map"}
+        { "x": 16, "y": 28, "destination": "ice.tmx", "pair_id": "ice_from_map"},
+        { "x": 16, "y": 29, "pair_id": "ice_to_map"}
       ],
       "player": {
         "x": 16,
@@ -33,19 +33,16 @@
       }
     },
     {
-      "path": "cave.tmx",
+      "path": "ice.tmx",
       "teleport": [
-        { "x": 7, "y": 6, "destination": "map.tmx", "pair_id": "cave_from_map" }
+        { "x": 4, "y": 9, "pair_id": "ice_from_map" },
+        { "x": 41, "y": 9, "destination": "map.tmx", "pair_id": "ice_to_map" }
       ],
-      "enemy_trainers": [
-        { "x": 3, "y": 3, "classification": "stationary", "facing": "RIGHT", "max_tiles": 2 },
-        { "x": 10, "y": 4, "classification": "stationary", "facing": "DOWN", "max_tiles": 2 },
-        { "x": 5, "y": 8, "classification": "stationary", "facing": "UP", "max_tiles": 2 }
-      ],
+      "enemy_trainers": [],
       "roaming_mobs": [],
       "player": {
-        "x": 7,
-        "y": 7
+        "x": 2,
+        "y": 2
       }
     }
   ],

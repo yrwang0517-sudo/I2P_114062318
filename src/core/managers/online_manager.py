@@ -1,3 +1,8 @@
+# ============================================
+# 線上玩家管理模組
+# 功能: WebSocket 連線、玩家位置同步、聊天系統
+# 特性: 非同步通訊、多執行緒、佇列式消息傳遞
+# ============================================
 import asyncio
 import threading
 import time
@@ -18,26 +23,31 @@ from typing import Any
 
 
 class OnlineManager:
-    list_players: list[dict]
-    player_id: int
-    # WebSocket state
-    _ws: Optional[Any]
-    _ws_loop: Optional[asyncio.AbstractEventLoop]
-    _ws_thread: Optional[threading.Thread]
-    _stop_event: threading.Event
-    _lock: threading.Lock
-    _update_queue: queue.Queue
-    _chat_out_queue: queue.Queue
-    _chat_messages: collections.deque
-    _last_chat_id: int
+    # ===== 線上玩家管理器主類 =====
+    # 負責與遠端伺服器通訊、玩家位置同步、聊天消息交換
+    # ===== 屬性定義 =====
+    list_players: list[dict]           # 遠端伺服器上的其他玩家列表
+    player_id: int                     # 此玩家連線後得到的唯一 ID
+    # ===== WebSocket 連線狀態 =====
+    _ws: Optional[Any]                 # WebSocket 連線物件
+    _ws_loop: Optional[asyncio.AbstractEventLoop]  # 非同步事件迴圈
+    _ws_thread: Optional[threading.Thread]         # 執行 WebSocket 的獨立執行緒
+    _stop_event: threading.Event       # 停止信號，用於優雅關閉
+    _lock: threading.Lock              # 執行緒安全的互斥鎖
+    _update_queue: queue.Queue         # 位置更新佇列（主執行緒 -> WebSocket 執行緒）
+    _chat_out_queue: queue.Queue       # 聊天訊息發出佇列
+    _chat_messages: collections.deque  # 接收的聊天訊息歷史
+    _last_chat_id: int                 # 最後一條聊天訊息的 ID
 
     def __init__(self):
+        """初始化線上管理器，檢查依賴並設定 WebSocket URL"""
         if websockets is None:
             Logger.error("WebSockets library not available")
             raise ImportError("websockets library required")
 
+        # ===== URL 轉換 =====
         self.base: str = GameSettings.ONLINE_SERVER_URL
-        # Convert HTTP URL to WebSocket URL
+        # 將 HTTP/HTTPS URL 轉換為 WebSocket URL
         if self.base.startswith("ws://") or self.base.startswith("wss://"):
             # 已經是 WebSocket URL，直接使用
             self.ws_url = self.base
@@ -48,24 +58,27 @@ class OnlineManager:
         else:
             self.ws_url = f"ws://{self.base}"
 
-        self.player_id = -1
-        self.list_players = []
-        self._ws = None
-        self._ws_loop = None
-        self._ws_thread = None
-        self._stop_event = threading.Event()
-        self._lock = threading.Lock()
-        self._update_queue = queue.Queue(maxsize=10)
-        self._chat_out_queue = queue.Queue(maxsize=50)
-        self._chat_messages = deque(maxlen=200)
-        self._last_chat_id = 0
+        # ===== 初始化狀態 =====
+        self.player_id = -1                # 未連接時為 -1
+        self.list_players = []             # 其他玩家列表
+        self._ws = None                    # 連線物件
+        self._ws_loop = None               # 事件迴圈
+        self._ws_thread = None             # 執行緒物件
+        self._stop_event = threading.Event()                    # 停止信號
+        self._lock = threading.Lock()                           # 互斥鎖
+        self._update_queue = queue.Queue(maxsize=10)            # 位置更新佇列
+        self._chat_out_queue = queue.Queue(maxsize=50)          # 聊天佇列
+        self._chat_messages = deque(maxlen=200)                 # 聊天歷史
+        self._last_chat_id = 0                                  # 聊天 ID 追蹤
 
         Logger.info("OnlineManager initialized")
 
     def enter(self):
+        """進入遊戲場景時啟動 WebSocket 連線"""
         self.start()
 
     def exit(self):
+        """退出遊戲場景時停止 WebSocket 連線"""
         self.stop()
 
     def get_list_players(self) -> list[dict]:
@@ -293,7 +306,7 @@ class OnlineManager:
             return False
         try:
             self._chat_out_queue.put_nowait(t)
-            return True 
+            return True
         except queue.Full:
             return False
 

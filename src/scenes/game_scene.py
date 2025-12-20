@@ -98,7 +98,7 @@ class GameScene(Scene):
         map_configs = [
             ("map.tmx", Position(16 * GameSettings.TILE_SIZE, 30 * GameSettings.TILE_SIZE)),
             ("gym.tmx", Position(12 * GameSettings.TILE_SIZE, 12 * GameSettings.TILE_SIZE)),
-            ("cave.tmx", Position(7 * GameSettings.TILE_SIZE, 6 * GameSettings.TILE_SIZE))
+            ("ice.tmx", Position(2 * GameSettings.TILE_SIZE, 2 * GameSettings.TILE_SIZE))
         ]
         
         for map_path, spawn_pos in map_configs:
@@ -108,7 +108,7 @@ class GameScene(Scene):
 #--------------------------------------------------
         player = Player(16 * GameSettings.TILE_SIZE, 30 * GameSettings.TILE_SIZE, None)
         bag = Bag([], [])
-        enemy_trainers = {"map.tmx": [], "gym.tmx": [], "cave.tmx": []}
+        enemy_trainers = {"map.tmx": [], "gym.tmx": [], "ice.tmx": []}
         self.game_manager = GameManager(maps, "map.tmx", player, enemy_trainers, bag)
         self.game_manager.player.game_manager = self.game_manager
         # starting money for shop purchases
@@ -148,7 +148,7 @@ class GameScene(Scene):
                 return None
         
         # Create NPCs for all maps from JSON
-        for map_name in ["map.tmx", "gym.tmx", "cave.tmx"]:
+        for map_name in ["map.tmx", "gym.tmx", "ice.tmx"]:
             trainers = trainers_data.get(map_name, [])
             for trainer_data in trainers:
                 x = trainer_data.get("x", 0)
@@ -319,6 +319,21 @@ class GameScene(Scene):
             self.minimap = None
             self.current_map = None
             self.player_tile_pos = (0, 0)
+        
+        # Ice map special locations
+        self.heal_trigger_pos = (5, 24)  # ice.tmx heal location
+        self.ice_shop_trigger_pos = (4, 36)  # ice.tmx shop location
+        self.show_heal_hint = False
+        self.show_ice_shop_hint = False
+        self.heal_timer = 0.0
+        self.healing_in_progress = False
+        
+        # Exp potion pickup locations
+        self.exp_potion_locations = [(19, 16), (20, 7), (28, 5), (29, 18)]
+        self.collected_exp_potions = set()  # Track collected positions
+        self.show_pickup_message = False
+        self.pickup_message_timer = 0.0
+        self.pickup_message = ""
 
     def save_game(self):
         # Save current game state to save_temp.json (includes bag/monsters/items)
@@ -529,6 +544,9 @@ class GameScene(Scene):
             self.shop_overlay.update(dt)
             return
 
+        # Check ice map special triggers
+        self._check_ice_triggers(dt)
+        
         # update minimap state: current_map and player tile pos
         try:
             self.current_map = self.game_manager.current_map
@@ -594,17 +612,15 @@ class GameScene(Scene):
         if self.game_manager.player:
             camera = self.game_manager.player.camera
             self.game_manager.current_map.draw(screen, camera)
+            
+            # Draw exp_potion pickups on ice map
+            self._draw_exp_potions(screen, camera)
+            
             self.game_manager.player.draw(screen, camera)
             # 畫所有 NPC，並在符合朝向範圍時顯示驚嘆號
             if hasattr(self, "npcs"):
                 for npc in self.npcs:
                     npc.draw(screen, camera)
-                    if self._npc_in_facing_range(npc):
-                        exclamation = Sprite("exclamation.png", (32, 32))
-                        ex_pos = npc.position.copy()
-                        ex_pos.y -= 32
-                        exclamation.update_pos(ex_pos)
-                        exclamation.draw(screen, camera)
             for enemy in self.game_manager.current_enemy_trainers:
                 enemy.draw(screen, camera)
         else:
@@ -622,7 +638,7 @@ class GameScene(Scene):
                 list_online = self.online_manager.get_list_players()
                 # 調試：打印在線玩家列表
                 current_map_name = self.game_manager.current_map.path_name
-                Logger.info(f"[Draw] Online players count: {len(list_online)}, Current map: '{current_map_name}'")
+                # Logger.info(f"[Draw] Online players count: {len(list_online)}, Current map: '{current_map_name}'")
                 for p in list_online:
                     same_map = "✓" if p['map'] == current_map_name else "✗"
                     Logger.info(f"  {same_map} Player {p['id']}: pos=({p['x']}, {p['y']}), map='{p['map']}', dir={p['direction']}, moving={p['is_moving']}")
@@ -696,8 +712,196 @@ class GameScene(Scene):
         # 繪製聊天系統 UI（顯示聊天窗口和訊息）
         if hasattr(self, 'chat_overlay') and self.chat_overlay:
             self.chat_overlay.draw(screen)
+        
+        # Draw ice map hints
+        self._draw_ice_hints(screen)
+        
         # draw minimap above overlays (top-left) unless backpack or shop overlays are open
         try:
+            backpack_open = hasattr(self, 'backpack_overlay') and self.backpack_overlay and self.backpack_overlay.is_active
+            shop_open = hasattr(self, 'shop_overlay') and self.shop_overlay and self.shop_overlay.is_active
+            if hasattr(self, 'minimap') and self.minimap and not (backpack_open or shop_open):
+                self.minimap.draw(screen)
+        except Exception:
+            pass
+
+    def _check_ice_triggers(self, dt: float):
+        """Check if player is at ice map special locations and handle SPACE key"""
+        try:
+            if not self.game_manager or not self.game_manager.player:
+                return
+            
+            current_map_name = self.game_manager.current_map.path_name if self.game_manager.current_map else ""
+            if current_map_name != "ice.tmx":
+                self.show_heal_hint = False
+                self.show_ice_shop_hint = False
+                return
+            
+            player_pos = self.game_manager.player.position
+            px_tile = int(player_pos.x) // GameSettings.TILE_SIZE
+            py_tile = int(player_pos.y) // GameSettings.TILE_SIZE
+            
+            from src.core.services import input_manager
+            
+            # Check heal trigger
+            if (px_tile, py_tile) == self.heal_trigger_pos:
+                self.show_heal_hint = True
+                if input_manager.key_pressed(pg.K_SPACE) and not self.healing_in_progress:
+                    self._trigger_heal()
+            else:
+                self.show_heal_hint = False
+            
+            # Check shop trigger
+            if (px_tile, py_tile) == self.ice_shop_trigger_pos:
+                self.show_ice_shop_hint = True
+                if input_manager.key_pressed(pg.K_SPACE):
+                    if hasattr(self, 'shop_overlay') and self.shop_overlay:
+                        self.shop_overlay.open()
+            else:
+                self.show_ice_shop_hint = False
+            
+            # Check exp_potion pickups
+            player_tile = (px_tile, py_tile)
+            if player_tile in self.exp_potion_locations and player_tile not in self.collected_exp_potions:
+                self._collect_exp_potion(player_tile)
+            
+            # Update heal timer
+            if self.healing_in_progress:
+                self.heal_timer += dt
+                if self.heal_timer >= 0.5:
+                    self._complete_heal()
+                    self.healing_in_progress = False
+                    self.heal_timer = 0.0
+            
+            # Update pickup message timer
+            if self.show_pickup_message:
+                self.pickup_message_timer += dt
+                if self.pickup_message_timer >= 2.0:  # Show for 2 seconds
+                    self.show_pickup_message = False
+                    self.pickup_message_timer = 0.0
+        except Exception as e:
+            Logger.error(f"Error in _check_ice_triggers: {e}")
+    
+    def _trigger_heal(self):
+        """Open backpack and start heal timer"""
+        try:
+            self.open_backpack()
+            self.healing_in_progress = True
+            self.heal_timer = 0.0
+        except Exception as e:
+            Logger.error(f"Error in _trigger_heal: {e}")
+    
+    def _complete_heal(self):
+        """Heal all monsters to max HP"""
+        try:
+            # Update both bag and backpack_overlay monsters
+            if hasattr(self.game_manager, 'bag') and self.game_manager.bag:
+                monsters = self.game_manager.bag._monsters_data
+                for monster in monsters:
+                    max_hp = monster.get('max_hp', 100)
+                    monster['hp'] = max_hp
+            
+            # Also update backpack_overlay's monsters list
+            if hasattr(self, 'backpack_overlay') and self.backpack_overlay:
+                for monster in self.backpack_overlay.monsters:
+                    max_hp = monster.get('max_hp', 100)
+                    monster['hp'] = max_hp
+            
+            Logger.info("All monsters healed to max HP")
+        except Exception as e:
+            Logger.error(f"Error in _complete_heal: {e}")
+    
+    def _collect_exp_potion(self, position: tuple):
+        """Collect exp_potion at given position"""
+        try:
+            # Mark as collected
+            self.collected_exp_potions.add(position)
+            
+            # Add to backpack_overlay items
+            if hasattr(self, 'backpack_overlay') and self.backpack_overlay:
+                # Find exp_potion in items and increase count
+                found = False
+                for item in self.backpack_overlay.items:
+                    if item.get('name') == 'exp potion':
+                        item['count'] = item.get('count', 0) + 1
+                        found = True
+                        break
+                
+                # If not found, add new item
+                if not found:
+                    self.backpack_overlay.items.append({
+                        'name': 'exp potion',
+                        'img': 'ingame_ui/exp_potion.png',
+                        'count': 1
+                    })
+            
+            # Show pickup message
+            self.show_pickup_message = True
+            self.pickup_message = "get one exp_potion!"
+            self.pickup_message_timer = 0.0
+            
+            Logger.info(f"Collected exp_potion at {position}")
+        except Exception as e:
+            Logger.error(f"Error in _collect_exp_potion: {e}")
+    
+    def _draw_ice_hints(self, screen: pg.Surface):
+        """Draw hint text at bottom right corner"""
+        try:
+            font = pg.font.SysFont(None, 28)
+            hint_text = None
+            
+            # Pickup message has priority
+            if self.show_pickup_message:
+                hint_text = self.pickup_message
+            elif self.show_heal_hint:
+                hint_text = "Press SPACE to heal"
+            elif self.show_ice_shop_hint:
+                hint_text = "Press SPACE to shop"
+            
+            if hint_text:
+                text_surface = font.render(hint_text, True, (200, 200, 200))
+                # Dark gray background
+                padding = 10
+                bg_rect = pg.Rect(0, 0, text_surface.get_width() + padding * 2, text_surface.get_height() + padding * 2)
+                bg_rect.bottomright = (GameSettings.SCREEN_WIDTH - 20, GameSettings.SCREEN_HEIGHT - 20)
+                
+                # Draw semi-transparent dark background
+                bg_surface = pg.Surface((bg_rect.width, bg_rect.height))
+                bg_surface.fill((40, 40, 40))
+                bg_surface.set_alpha(200)
+                screen.blit(bg_surface, bg_rect.topleft)
+                
+                # Draw text
+                text_rect = text_surface.get_rect(center=bg_rect.center)
+                screen.blit(text_surface, text_rect)
+        except Exception as e:
+            Logger.error(f"Error in _draw_ice_hints: {e}")
+    
+    def _draw_exp_potions(self, screen: pg.Surface, camera: PositionCamera):
+        """Draw exp_potion sprites at uncollected locations on ice map"""
+        try:
+            # Only draw on ice map
+            current_map_name = self.game_manager.current_map.path_name if self.game_manager.current_map else ""
+            if current_map_name != "ice.tmx":
+                return
+            
+            from src.core.services import resource_manager
+            # Load exp_potion image
+            potion_img = resource_manager.get_image("ingame_ui/exp_potion.png")
+            potion_img = pg.transform.scale(potion_img, (GameSettings.TILE_SIZE, GameSettings.TILE_SIZE))
+            
+            # Draw each uncollected potion
+            for pos in self.exp_potion_locations:
+                if pos not in self.collected_exp_potions:
+                    # Convert tile position to pixel position
+                    pixel_x = pos[0] * GameSettings.TILE_SIZE
+                    pixel_y = pos[1] * GameSettings.TILE_SIZE
+                    
+                    # Apply camera transform
+                    screen_pos = camera.transform_position(Position(pixel_x, pixel_y))
+                    screen.blit(potion_img, screen_pos)
+        except Exception as e:
+            Logger.error(f"Error in _draw_exp_potions: {e}")
             backpack_open = hasattr(self, 'backpack_overlay') and self.backpack_overlay and self.backpack_overlay.is_active
             shop_open = hasattr(self, 'shop_overlay') and self.shop_overlay and self.shop_overlay.is_active
             if not backpack_open and not shop_open:

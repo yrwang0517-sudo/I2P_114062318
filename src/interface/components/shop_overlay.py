@@ -1,3 +1,8 @@
+# ============================================
+# 商店界面管理模組
+# 功能: 顯示商品、購買/出售道具、金幣管理
+# 特性: 道具價格表、購買限制檢查、聊天字體支援
+# ============================================
 import os
 import re
 import pygame as pg
@@ -5,31 +10,45 @@ from src.utils import GameSettings, Logger
 from src.core.services import input_manager, resource_manager
 
 class ShopOverlay:
+    """商店界面類
+    
+    責任:
+    - 顯示可購買的道具列表
+    - 管理 BUY/SELL 頁籤
+    - 同步玩家金幣 (Coins)
+    - 處理購買交易和道具添加
+    """
     def __init__(self, game_scene=None):
+        """初始化商店界面
+        
+        參數:
+            game_scene: 遊戲場景物件，用於存取金幣、背包、怪物等
+        """
         self.is_active = False
-        # Same size as BackpackOverlay (1250 x 700)
+        # ===== 界面佈局 (與背包界面相同尺寸 1250 x 700) =====
         self.overlay_rect = pg.Rect(
-            (GameSettings.SCREEN_WIDTH - 1250) // 2,
-            (GameSettings.SCREEN_HEIGHT - 700) // 2,
+            (GameSettings.SCREEN_WIDTH - 1250) // 2,   # 水平居中
+            (GameSettings.SCREEN_HEIGHT - 700) // 2,   # 垂直居中
             1250, 700
         )
         self.game_scene = game_scene
-        # Buttons: (image_normal, image_hover) - using UI/raw paths consistent with other UI
-        self.buy_btn_img = resource_manager.get_image("UI/raw/UI_Flat_Button01a_1.png")
-        # swap: use _4 as default image and _1 as hover image per request
-        self.buy_btn_img = resource_manager.get_image("UI/raw/UI_Flat_Button01a_4.png")
-        self.buy_btn_img_h = resource_manager.get_image("UI/raw/UI_Flat_Button01a_1.png")
+        
+        # ===== 購買/出售按鈕圖片 =====
+        # 按鈕狀態圖片: 未點擊 vs 懸停
+        self.buy_btn_img = resource_manager.get_image("UI/raw/UI_Flat_Button01a_4.png")   # 默認樣式
+        self.buy_btn_img_h = resource_manager.get_image("UI/raw/UI_Flat_Button01a_1.png")  # 懸停樣式
 
-        # button rects (placed near top-left inside overlay)
-        btn_w, btn_h = 180, 56
-        padding = 20
+        # ===== 按鈕位置 (左上方) =====
+        btn_w, btn_h = 180, 56             # 按鈕寬度、高度
+        padding = 20                       # 內邊距
         self.buy_rect = pg.Rect(self.overlay_rect.x + padding, self.overlay_rect.y + padding, btn_w, btn_h)
-        # sell button on the right of buy (visual only)
+        # 出售按鈕在購買按鈕右邊（視覺用，尚未實裝出售功能）
         self.sell_btn_img = resource_manager.get_image("UI/raw/UI_Flat_Button01a_4.png")
         self.sell_btn_img_h = resource_manager.get_image("UI/raw/UI_Flat_Button01a_1.png")
         self.sell_rect = pg.Rect(self.overlay_rect.x + padding + btn_w + 10, self.overlay_rect.y + padding, btn_w, btn_h)
 
-        # Items available to buy
+        # ===== 商品列表 =====
+        # 每項包含: key, name（顯示名), img（圖片路徑), price（購買價格）
         self.items = [
             {"key": "hp_potion", "name": "hp potion", "img": "ingame_ui/potion.png", "price": 2},
             {"key": "max_hp_potion", "name": "max hp potion", "img": "ingame_ui/potion.png", "price": 5},
@@ -39,56 +58,68 @@ class ShopOverlay:
             {"key": "exp_potion", "name": "exp potion", "img": "ingame_ui/exp_potion.png", "price": 5},
         ]
 
-        # UI background for each item
-        self.item_bg = resource_manager.get_image("UI/raw/UI_Flat_Banner03a.png")
+        # ===== UI 組件 =====
+        self.item_bg = resource_manager.get_image("UI/raw/UI_Flat_Banner03a.png")  # 商品背景圖
+        self.shop_btn_img = resource_manager.get_image("UI/button_shop.png")        # 購買按鈕圖
+        self.shop_btn_img_h = resource_manager.get_image("UI/button_shop_hover.png") # 購買按鈕懸停圖
+        
+        # ===== 狀態 =====
+        self.tab = "buy"  # 當前頁籤: "buy" 或 "sell"
 
-        # shop button images (click to buy)
-        self.shop_btn_img = resource_manager.get_image("UI/button_shop.png")
-        self.shop_btn_img_h = resource_manager.get_image("UI/button_shop_hover.png")
-        # state
-        self.tab = "buy"  # or "sell"
-
-        # X button
+        # ===== 關閉按鈕 (X) =====
         self.x_button = pg.Rect(self.overlay_rect.right - 100, self.overlay_rect.top + 10, 40, 40)
 
-        # hint text shown at top of overlay (empty by default)
-        self.hint_text = ""
-        self.hint_expire = 0
-        # duration in milliseconds to show hint
-        self.hint_duration = 2000
+        # ===== 提示訊息 =====
+        self.hint_text = ""        # 提示文字（購買成功、金幣不足等）
+        self.hint_expire = 0       # 提示過期時間戳
+        self.hint_duration = 2000  # 提示顯示時長（毫秒）
 
-        # font cache: keys are (font_name, size)
+        # ===== 字體快取 =====
+        # 存儲已加載字體以避免重複加載
         self._font_cache = {}
-        # path to local Minecraft TTF
+        # Minecraft 字體路徑
         self._minecraft_ttf = os.path.join('assets', 'fonts', 'Minecraft.ttf')
-        # regex to detect CJK Unified Ideographs (Chinese characters)
+        # 中文字符檢測正規表達式 (CJK 統一表意文字)
         self._cjk_re = re.compile(r'[\u4e00-\u9fff]')
 
     def _get_font_for_text(self, text: str, size: int):
-        """Return a pygame Font object: use Microsoft JhengHei if text contains CJK characters,
-        otherwise use Minecraft TTF. Cache fonts by (type,size).
+        """根據文字內容選擇適當字體 (中文用微軟正黑體、英文用 Minecraft 字體)
+        
+        參數:
+            text: 要渲染的文字
+            size: 字體大小 (像素)
+            
+        返回: pygame Font 物件 (已快取，避免重複加載)
+        
+        邏輯:
+            1. 檢測文字是否包含中文字符 (CJK)
+            2. 中文 -> 微軟正黑體 / 英文 -> Minecraft TTF
+            3. 字體快取提升性能
         """
         try:
+            # 檢測中文字符
             use_cjk = bool(self._cjk_re.search(text or ''))
         except Exception:
             use_cjk = False
 
+        # 快取鍵: (字體類型, 大小)
         key = ('jhenghei' if use_cjk else 'minecraft', size)
         if key in self._font_cache:
             return self._font_cache[key]
 
         font_obj = None
         if use_cjk:
+            # 優先使用微軟正黑體 (繁體中文字體)
             try:
                 font_obj = pg.font.SysFont('Microsoft JhengHei', size)
             except Exception:
-                font_obj = pg.font.SysFont(None, size)
+                font_obj = pg.font.SysFont(None, size)  # 降級為系統默認字體
         else:
+            # 英文使用 Minecraft 字體
             try:
                 if os.path.exists(self._minecraft_ttf):
                     font_obj = pg.font.Font(self._minecraft_ttf, size)
                 else:
-                    # fallback to system default
                     font_obj = pg.font.SysFont(None, size)
             except Exception:
                 font_obj = pg.font.SysFont(None, size)
@@ -97,7 +128,13 @@ class ShopOverlay:
         return font_obj
 
     def _sync_coins_with_bag(self):
-        """Ensure bag and backpack_overlay have a Coins item that matches game_scene.money."""
+        """同步遊戲場景的金幣 (GameScene.money) 與背包中的 Coins 道具
+        
+        功能:
+        - 確保 bag 和 backpack_overlay 中的 Coins 數量與 game_scene.money 一致
+        - 如果找不到 Coins，則添加新的 Coins 道具
+        - 用於購買後更新金幣顯示
+        """
         try:
             gs = self.game_scene
             if not gs:

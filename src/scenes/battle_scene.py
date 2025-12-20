@@ -1,3 +1,8 @@
+# ============================================
+# 進階戰鬥場景模組
+# 功能: 回合制戰鬥、屬性相剋、技能效果
+# 特性: 戰鬥動畫、傷害計算、勝敗判定
+# ============================================
 
 import pygame as pg
 import os
@@ -10,7 +15,18 @@ from src.utils import GameSettings
 from typing import Optional, Tuple, List
 
 class BattleScene(Scene):
-    # 屬性相剋表
+    """進階戰鬥場景
+    
+    責任:
+    - 顯示玩家和敵人怪物
+    - 實施回合制戰鬥邏輯
+    - 計算屬性相剋傷害倍率
+    - 顯示戰鬥結果和動畫效果
+    """
+    
+    # ===== 屬性相剋表 =====
+    # 格式: 攻擊方屬性 -> {防守方屬性: 傷害倍率}
+    # 倍率: 2.0 (超級有效)、1.0 (正常)、0.5 (不太有效)、0 (無效果)
     TYPE_EFFECTIVENESS = {
         "Grass":    {"Water": 2, "Fire": 0.5, "Grass": 0.5, "Flying": 0.5},
         "Fire":     {"Grass": 2, "Ice": 2, "Fire": 0.5, "Water": 0.5},
@@ -22,7 +38,9 @@ class BattleScene(Scene):
         "Normal":   {"Ghost": 0},
     }
 
-    # 菜單精靈圖 -> 屬性對應 (可複數屬性)
+    # ===== 精靈圖片與屬性對應 =====
+    # 格式: 精靈檔案名 -> [屬性列表]
+    # 怪物可能有多個屬性 (如草/毒、鋼/飛等)
     SPRITE_TYPES = {
         "advancebattlemenusprite1.png": ["Grass"],
         "menusprite1.png": ["Grass"],
@@ -42,61 +60,65 @@ class BattleScene(Scene):
         "menusprite15.png": ["Grass"],
         "menusprite16.png": ["Grass", "Flying"],
     }
-    bush_monster_index = 0  # 靜態變數，記錄目前輪到哪一隻
+    bush_monster_index = 0  # 靜態變數，記錄灌木怪物輪換索引
 
     def __init__(self) -> None:
+        """初始化戰鬥場景"""
         super().__init__()
-        # 背景初始化
+        # ===== 背景精靈 =====
         self.background = BackgroundSprite("backgrounds/background1.png")
 
-        # 字體初始化
+        # ===== 字體初始化 =====
         pg.font.init()
         from src.utils.loader import load_font
-        self.small_font = load_font("Minecraft.ttf", 40)
-        self.medium_font = load_font("Minecraft.ttf", 50)
-        self.info_font = load_font("Minecraft.ttf", 28)
-        self.msjh_font = pg.font.SysFont("Microsoft JhengHei", 40)
-        # 效果提示用大字體（放大約 2 倍，紅字）
+        self.small_font = load_font("Minecraft.ttf", 40)          # 小文字
+        self.medium_font = load_font("Minecraft.ttf", 50)         # 中文字
+        self.info_font = load_font("Minecraft.ttf", 28)           # 資訊文字
+        self.msjh_font = pg.font.SysFont("Microsoft JhengHei", 40)  # 中文系統字體
+        # ===== 效果提示用大字體（放大約 2 倍，紅字，顯示屬性倍率） =====
         self.effect_font = pg.font.SysFont("Microsoft JhengHei", 80)
 
-        # 精靈初始化
-        self.enemy_sprite = None  # type: Optional[Sprite]
-        self.menusprite3 = Sprite("menu_sprites/menusprite3.png")
-        self.banner = Sprite("UI/raw/UI_Flat_Banner03a.png")
+        # ===== UI 精靈 =====
+        self.enemy_sprite = None  # type: Optional[Sprite]  # 敵人怪物精靈
+        self.menusprite3 = Sprite("menu_sprites/menusprite3.png")  # 預設敵人圖片
+        self.banner = Sprite("UI/raw/UI_Flat_Banner03a.png")       # 背景橫幅
 
-# ---------------------------下方那四個文字按鈕 ----------------
-        btn_w, btn_h = 180, 56                   #按鈕寬度 高
-        spacing = 16                             #按鈕間空格
-        total_w = 4 * btn_w + 3 * spacing        #全部按鈕總長度
-        start_x = (GameSettings.SCREEN_WIDTH - total_w) // 2   #第一個按鈕開始的位置
-        y = GameSettings.SCREEN_HEIGHT - btn_h - 24
-# ---------------------------下方那四個文字按鈕 ----------------
+        # ===== 下方四個按鈕設定 =====
+        btn_w, btn_h = 180, 56                   # 按鈕寬度、高度
+        spacing = 16                             # 按鈕間距
+        total_w = 4 * btn_w + 3 * spacing        # 四個按鈕總寬度
+        start_x = (GameSettings.SCREEN_WIDTH - total_w) // 2   # 第一個按鈕起始位置 (水平居中)
+        y = GameSettings.SCREEN_HEIGHT - btn_h - 24  # 按鈕距離底部距離
 
 
         self.buttons = [] 
+        # ===== 創建四個戰鬥按鈕 =====
+        # "Fight" (攻擊)、"Interact" (對話/互動)、"Catch" (捕捉)、"Run" (逃跑)
         for i, label in enumerate(["Fight", "Interact", "Catch", "Run"]):
             x = start_x + i * (btn_w + spacing)
             cb = getattr(self, f"_on_{label.lower()}") if hasattr(self, f"_on_{label.lower()}") else self._on_run
             btn = Button("UI/raw/UI_Flat_Button01a_4.png", "UI/raw/UI_Flat_Button01a_1.png", x, y, btn_w, btn_h, cb)
             self.buttons.append((btn, label))
 
-        #先設定成助教給的gif裡面的腳色資訊
-        self.step = 0
-        self.is_npc_battle = True 
-        self.enemy_monster = None  # type: Optional[dict]
-        self.enemy_name = "Blastoise"
-        self.enemy_level = 32
-        self.enemy_max_hp = 180
-        self.enemy_hp = 120
-        self.enemy_sprite = Sprite("menu_sprites/menusprite3.png")
+        # ===== 敵人初始狀態設定 =====
+        # 預設為與助教 GIF 中相同的角色資訊
+        self.step = 0                      # 當前戰鬥步驟 (玩家/敵人回合)
+        self.is_npc_battle = True          # 是否與 NPC 戰鬥 (True) 或灌木野生怪物 (False)
+        self.enemy_monster = None          # type: Optional[dict]  # 敵人怪物資料
+        self.enemy_name = "Blastoise"      # 敵人名稱
+        self.enemy_level = 32              # 敵人等級
+        self.enemy_max_hp = 180            # 敵人最大 HP
+        self.enemy_hp = 120                # 敵人當前 HP
+        self.enemy_sprite = Sprite("menu_sprites/menusprite3.png")  # 敵人圖片
 
-        self.player_max_hp = 201
-        self.player_hp = 180
-        self.waiting_for_enemy = False
-        self.enemy_attack_timer = 0.0
-        self.custom_bottom_text = None  # type: Optional[str]
-        self.effect_text = None          # 攻擊效果提示文字（顯示於畫面上方）
-        self.effect_multiplier = 1.0     # 這場戰鬥的屬性倍率
+        # ===== 玩家狀態初始化 =====
+        self.player_max_hp = 201           # 玩家怪物最大 HP
+        self.player_hp = 180               # 玩家怪物當前 HP
+        self.waiting_for_enemy = False     # 是否等待敵人攻擊
+        self.enemy_attack_timer = 0.0      # 敵人攻擊計時器
+        self.custom_bottom_text = None     # type: Optional[str]  # 自訂底部文字
+        self.effect_text = None            # 攻擊效果提示文字（顯示於畫面上方）
+        self.effect_multiplier = 1.0       # 本場戰鬥的屬性倍率
 
     def enter(self, is_npc_battle: bool = True, enemy: Optional[dict] = None) -> None:
         self.step = 0
