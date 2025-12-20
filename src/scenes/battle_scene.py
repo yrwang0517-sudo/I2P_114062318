@@ -93,8 +93,8 @@ class BattleScene(Scene):
 
         self.buttons = [] 
         # ===== 創建四個戰鬥按鈕 =====
-        # "Fight" (攻擊)、"Interact" (對話/互動)、"Catch" (捕捉)、"Run" (逃跑)
-        for i, label in enumerate(["Fight", "Interact", "Catch", "Run"]):
+        # "Fight" (攻擊)、"ITEM" (道具)、"Catch" (捕捉)、"Run" (逃跑)
+        for i, label in enumerate(["Fight", "ITEM", "Catch", "Run"]):
             x = start_x + i * (btn_w + spacing)
             cb = getattr(self, f"_on_{label.lower()}") if hasattr(self, f"_on_{label.lower()}") else self._on_run
             btn = Button("UI/raw/UI_Flat_Button01a_4.png", "UI/raw/UI_Flat_Button01a_1.png", x, y, btn_w, btn_h, cb)
@@ -251,6 +251,17 @@ class BattleScene(Scene):
 
     def update(self, dt: float) -> None:
         """更新場景邏輯"""
+        # 如果背包打开，优先处理背包的更新和输入
+        try:
+            from src.core.services import scene_manager
+            game_scene = scene_manager._scenes.get("game")
+            if game_scene and hasattr(game_scene, 'backpack_overlay'):
+                if game_scene.backpack_overlay.is_active:
+                    game_scene.backpack_overlay.update(dt)
+                    return  # 背包打开时阻止战斗场景的其他更新
+        except Exception:
+            pass
+        
         if input_manager.key_pressed(pg.K_SPACE):
             self.step = min(3, self.step + 1)  #最大為3
 
@@ -392,6 +403,16 @@ class BattleScene(Scene):
             screen.blit(eff_surface, (eff_x, eff_y))
         if self.pokeball_sprite is not None:
             self.pokeball_sprite.draw(screen)
+        
+        # 绘制背包界面（如果已打开）
+        try:
+            from src.core.services import scene_manager
+            game_scene = scene_manager._scenes.get("game")
+            if game_scene and hasattr(game_scene, 'backpack_overlay'):
+                if game_scene.backpack_overlay.is_active:
+                    game_scene.backpack_overlay.draw(screen)
+        except Exception:
+            pass
 
     def _draw_enemy_info(self, screen: pg.Surface) -> None:
         """繪製敵人信息"""
@@ -553,9 +574,25 @@ class BattleScene(Scene):
         self.waiting_for_enemy = True
         self.enemy_attack_timer = 0.0
 
-    def _on_interact(self) -> None:
-        """玩家選擇互動"""
-        self.custom_bottom_text = "助教 菜菜 撈撈"
+    def _on_item(self) -> None:
+        """玩家選擇使用道具 (打開背包)"""
+        # 打開背包界面
+        try:
+            from src.core.services import scene_manager
+            game_scene = scene_manager._scenes.get("game")
+            if game_scene and hasattr(game_scene, 'backpack_overlay'):
+                if game_scene.backpack_overlay.is_active:
+                    game_scene.backpack_overlay.close()
+                    self.custom_bottom_text = "Closed bag"
+                else:
+                    game_scene.backpack_overlay.open()
+                    self.custom_bottom_text = "Opening bag..."
+            else:
+                self.custom_bottom_text = "Bag not available"
+        except Exception as e:
+            from src.utils import Logger
+            Logger.error(f"Failed to open bag: {e}")
+            self.custom_bottom_text = "Error opening bag"
 
     def _on_catch(self) -> None:
         """玩家選擇捕捉 (丟出寶貝球)"""
