@@ -261,8 +261,8 @@ class BattleScene(Scene):
         if self.waiting_for_enemy:
             self.enemy_attack_timer += dt         #紀錄時間
             if self.enemy_attack_timer >= 2.0:
-                # 計算敵人攻擊傷害（基礎 20，考慮防禦 buff）
-                base_damage = 20
+                # 計算敵人攻擊傷害（基礎 40，考慮防禦 buff）
+                base_damage = 40
                 defense_reduction = 0
                 try:
                     if getattr(self, 'player_monster', None) is not None:
@@ -283,9 +283,15 @@ class BattleScene(Scene):
                     pass
                 self.waiting_for_enemy = False              
                 self.enemy_attack_timer = 0.0
+                
+                # 檢查玩家怪物是否被擊敗
                 if self.player_hp <= 0:
-                    from src.core.services import scene_manager
-                    scene_manager.change_scene("game")
+                    # 嘗試切換到下一只怪物
+                    switched = self._switch_to_next_monster()
+                    if not switched:
+                        # 沒有更多怪物可用，戰鬥失敗
+                        from src.core.services import scene_manager
+                        scene_manager.change_scene("game")
 
         if self.catching and self.pokeball_sprite is not None:
             if self._pokeball_state == 'travel':
@@ -394,11 +400,10 @@ class BattleScene(Scene):
         bar_y = 50
         banner_img = pg.transform.scale(self.banner.image, (bar_w, bar_h))
         screen.blit(banner_img, (bar_x, bar_y))
-        # icon 也跟著怪物圖片切換
+        # 只顯示精靈 icon，不顯示其他裝飾
         icon_img = self.enemy_sprite.image
-
-        icon = pg.transform.scale(icon_img, (78, 78))  #改變頭像大小
-        screen.blit(icon, (bar_x + 8, bar_y - 10))      #放頭像
+        icon = pg.transform.scale(icon_img, (78, 78))
+        screen.blit(icon, (bar_x + 8, bar_y - 10))
         name = self.info_font.render(self.enemy_name, True, (0, 0, 0))
         screen.blit(name, (bar_x + 90, bar_y + 6))
         max_hp = self.enemy_max_hp
@@ -412,31 +417,9 @@ class BattleScene(Scene):
         lv = self.info_font.render(f"Lv.{self.enemy_level}", True, (0, 0, 0))
         screen.blit(lv, (bar_x + 220, bar_y + 28))
         
-        # Draw level 50 better icon over enemy icon if reached
-        if self.enemy_monster and self.enemy_monster.get('level_50_reached'):
-            try:
-                from src.core.services import resource_manager
-                better_img = resource_manager.get_image('menu_sprites/better.png')
-                if better_img:
-                    better_icon = pg.transform.smoothscale(better_img, (78, 39))
-                    screen.blit(better_icon, (bar_x + 8, bar_y + 5))
-            except Exception:
-                pass
-        
+        # 下方大型精靈圖 - 只顯示精靈圖片，不顯示 better 等裝飾
         ms2_big = pg.transform.scale(self.enemy_sprite.image, (120, 120))
         screen.blit(ms2_big, (GameSettings.SCREEN_WIDTH // 2 + 200, GameSettings.SCREEN_HEIGHT // 2 - ms2_big.get_height() // 2 - 40))
-        
-        # Draw level 50 better icon over large enemy sprite
-        if self.enemy_monster and self.enemy_monster.get('level_50_reached'):
-            try:
-                better_img = resource_manager.get_image('menu_sprites/better.png')
-                if better_img:
-                    better_icon = pg.transform.smoothscale(better_img, (120, 60))
-                    x = GameSettings.SCREEN_WIDTH // 2 + 200
-                    y = GameSettings.SCREEN_HEIGHT // 2 - ms2_big.get_height() // 2 - 40 + 15
-                    screen.blit(better_icon, (x, y))
-            except Exception:
-                pass
 
     def _draw_player_info(self, screen: pg.Surface) -> None:
         """繪製玩家信息"""
@@ -491,7 +474,7 @@ class BattleScene(Scene):
             hp = max(0, self.player_hp)
             level_val = 20
 
-        # draw icon and texts
+        # 只顯示精靈 icon，不顯示其他裝飾
         if icon_img:
             icon = pg.transform.scale(icon_img, (78, 78))
             screen.blit(icon, (bar_x + 8, bar_y - 10))
@@ -504,17 +487,6 @@ class BattleScene(Scene):
         screen.blit(hp_text, (bar_x + 90, bar_y + 44))
         lv = self.info_font.render(f"Lv.{level_val}", True, (0, 0, 0))
         screen.blit(lv, (bar_x + 220, bar_y + 28))
-        
-        # Draw level 50 better icon over player icon if reached
-        try:
-            pm = getattr(self, 'player_monster', None)
-            if pm and pm.get('level_50_reached'):
-                better_img = resource_manager.get_image('menu_sprites/better.png')
-                if better_img:
-                    better_icon = pg.transform.smoothscale(better_img, (78, 39))
-                    screen.blit(better_icon, (bar_x + 8, bar_y + 5))
-        except Exception:
-            pass
         
         # Draw buff icons above player info banner if present
         try:
@@ -538,20 +510,13 @@ class BattleScene(Scene):
         except Exception:
             pass
         
-        # draw big sprite on left
+        # 下方大型精靈圖 - 只顯示精靈圖片，不顯示 better 等裝飾
         try:
             ms3 = pg.transform.scale(icon_img, (120, 120))
             ms3 = pg.transform.flip(ms3, True, False)
             x = 80
             y = GameSettings.SCREEN_HEIGHT // 2 - ms3.get_height() // 2 + 40
             screen.blit(ms3, (x, y))
-            # Draw level 50 better icon over large player sprite
-            pm = getattr(self, 'player_monster', None)
-            if pm and pm.get('level_50_reached'):
-                better_img = resource_manager.get_image('menu_sprites/better.png')
-                if better_img:
-                    better_icon = pg.transform.smoothscale(better_img, (120, 60))
-                    screen.blit(better_icon, (x, y + 15))
         except Exception:
             pass
 
@@ -697,6 +662,67 @@ class BattleScene(Scene):
         multiplier = self._compute_type_multiplier(attacker_types, defender_types)
         self._set_effect_text_from_multiplier(multiplier)
 
+    def _switch_to_next_monster(self) -> bool:
+        """切換到下一只可用的怪物
+        
+        返回:
+            True: 成功切換到下一只怪物
+            False: 沒有更多可用怪物
+        """
+        try:
+            from src.core.services import scene_manager
+            game_scene = scene_manager._scenes.get("game")
+            if not game_scene or not hasattr(game_scene, "backpack_overlay"):
+                return False
+            
+            monsters = game_scene.backpack_overlay.get_monsters()
+            if not monsters:
+                return False
+            
+            # 找到當前怪物索引
+            current_index = -1
+            if self.player_monster:
+                for i, m in enumerate(monsters):
+                    if m.get('name') == self.player_monster.get('name'):
+                        current_index = i
+                        break
+            
+            # 尋找下一只 HP > 0 的怪物
+            start_index = (current_index + 1) % len(monsters)
+            for offset in range(len(monsters)):
+                check_index = (start_index + offset) % len(monsters)
+                candidate = monsters[check_index]
+                if candidate.get('hp', 0) > 0:
+                    # 找到可用怪物，切換過去
+                    self.player_monster = candidate
+                    self.player_max_hp = candidate.get('max_hp', 100)
+                    self.player_hp = candidate.get('hp', self.player_max_hp)
+                    
+                    # 更新背包的 default_index
+                    game_scene.backpack_overlay.default_index = check_index
+                    
+                    # 重新計算屬性相剋
+                    try:
+                        self._init_effect_text_and_multiplier()
+                    except Exception:
+                        self.effect_text = None
+                        self.effect_multiplier = 1.0
+                    
+                    # 顯示切換提示
+                    self.custom_bottom_text = f"切換到 {candidate.get('name', 'Unknown')}！"
+                    return True
+            
+            # 沒有找到任何 HP > 0 的怪物
+            return False
+            
+        except Exception as e:
+            try:
+                from src.utils import Logger
+                Logger.error(f"切換怪物時發生錯誤: {e}")
+            except Exception:
+                pass
+            return False
+    
     def _handle_enemy_defeated(self) -> None:
         """處理敵人被擊敗"""
         # 清除戰鬥 buff

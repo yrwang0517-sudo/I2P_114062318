@@ -130,10 +130,11 @@ class BackpackOverlay:
         self._last_hovered_item_idx = None
         # active cursor image to draw when overlay opened (defaults to options)
         self._active_cursor_img = None
-        # level 50 milestone notification
+        # level 50/100 milestone notification
         self._level_50_show_time = 0
         self._level_50_tip_img = None
         self._level_50_stat_text_time = 0
+        self._current_milestone_level = 50  # 追蹤當前達到的里程碑等級（50 或 100）
 
     def add_monster(self, monster):
         #怪物不重複
@@ -313,27 +314,45 @@ class BackpackOverlay:
         
         # exp potion must be handled before generic potion checks to avoid substring match
         if name == 'exp potion' or name == 'exp_potion' or ('exp' in name and 'potion' in name):
-            # exp potion: 等級提升 10，不影響 HP
+            # exp potion: 等級提升 10，並根據等級里程碑提升屬性
             try:
                 cur_lv = int(m.get('level', 1))
                 m['level'] = cur_lv + 10
-                # check if level reaches 50
-                if m['level'] >= 50 and cur_lv < 50:
+                
+                # 檢查是否達到 100 級 (優先檢查，因為獎勵更高)
+                if m['level'] >= 100 and cur_lv < 100:
                     self._level_50_show_time = pg.time.get_ticks() + 2000
+                    self._current_milestone_level = 100  # 設定當前里程碑為 100 級
                     try:
                         self._level_50_tip_img = resource_manager.get_image('menu_sprites/better exp tip.png')
                     except Exception:
                         self._level_50_tip_img = None
-                    # Mark monster as reached level 50
+                    # 標記達到 100 級
+                    m['level_100_reached'] = True
+                    # 提升屬性：攻擊力 +30，最大 HP +150
+                    m['attack'] = m.get('attack', 0) + 30
+                    m['max_hp'] = m.get('max_hp', 100) + 150
+                    # 恢復 HP 到新的最大值
+                    m['hp'] = m['max_hp']
+                    # 安排屬性文字顯示時間
+                    self._level_50_stat_text_time = pg.time.get_ticks() + 2000 + 3000  # 動畫結束後顯示 3 秒
+                # 檢查是否達到 50 級
+                elif m['level'] >= 50 and cur_lv < 50:
+                    self._level_50_show_time = pg.time.get_ticks() + 2000
+                    self._current_milestone_level = 50  # 設定當前里程碑為 50 級
+                    try:
+                        self._level_50_tip_img = resource_manager.get_image('menu_sprites/better exp tip.png')
+                    except Exception:
+                        self._level_50_tip_img = None
+                    # 標記達到 50 級
                     m['level_50_reached'] = True
-                    m['better_icon_img'] = 'menu_sprites/better.png'
-                    # Increase stats
+                    # 提升屬性：攻擊力 +20，最大 HP +100
                     m['attack'] = m.get('attack', 0) + 20
                     m['max_hp'] = m.get('max_hp', 100) + 100
-                    # Restore HP to new max_hp
+                    # 恢復 HP 到新的最大值
                     m['hp'] = m['max_hp']
-                    # Schedule stat text display after animation ends (2 seconds)
-                    self._level_50_stat_text_time = pg.time.get_ticks() + 2000 + 3000  # show for 3 seconds after
+                    # 安排屬性文字顯示時間
+                    self._level_50_stat_text_time = pg.time.get_ticks() + 2000 + 3000  # 動畫結束後顯示 3 秒
             except Exception:
                 m['level'] = (m.get('level') or 1) + 10
             consumed = True
@@ -425,7 +444,11 @@ class BackpackOverlay:
         # Draw stat boost text after animation ends (to the right of BAG title, single line)
         if now > self._level_50_show_time and now <= self._level_50_stat_text_time:
             try:
-                stat_text = "attack +20  max_hp +100"
+                # 根據達到的等級顯示對應的屬性加成
+                if self._current_milestone_level == 100:
+                    stat_text = "attack +30  max_hp +150"
+                else:  # 50 級
+                    stat_text = "attack +20  max_hp +100"
                 font = pg.font.SysFont("Microsoft JhengHei", 48)
                 text_surf = font.render(stat_text, True, (255, 0, 0))
                 # Position to the right of BAG text, 25px higher
@@ -544,17 +567,6 @@ class BackpackOverlay:
         lv_font = pg.font.SysFont(None, 20)
         lv_text = lv_font.render(f'Lv{poke.get("level", "?")}', True, (0, 0, 0))
         screen.blit(lv_text, (bar_x + bar_w + 10, bar_y))
-        
-        # Draw level 50 better icon overlapping top half of monster icon if present
-        if poke.get('level_50_reached'):
-            try:
-                better_img_path = poke.get('better_icon_img', 'menu_sprites/better.png')
-                better_img = resource_manager.get_image(better_img_path)
-                if better_img:
-                    better_icon = pg.transform.smoothscale(better_img, (64, 32))
-                    screen.blit(better_icon, (base_x + 8, base_y + 18))
-            except Exception:
-                pass
         
         # Draw buff icons above the monster icon if present
         buff_y_offset = base_y + 5

@@ -327,6 +327,10 @@ class GameScene(Scene):
         self.show_ice_shop_hint = False
         self.heal_timer = 0.0
         self.healing_in_progress = False
+
+        # General map shop trigger (non-ice)
+        self.map_shop_trigger_pos = (19, 32)
+        self.show_map_shop_hint = False
         
         # Exp potion pickup locations
         self.exp_potion_locations = [(19, 16), (20, 7), (28, 5), (29, 18)]
@@ -483,31 +487,22 @@ class GameScene(Scene):
         # 玩家靠近NPC且按下E或SPACE時切換到戰鬥場景或商店（若靠近 shop_npc）
         from src.core.services import input_manager, scene_manager
         
-        # check shop npc first
+        # map tile shop trigger (19,32) with SPACE (強制開啟 shop，不再經過 helper 判斷)
         try:
-            shop_exists = hasattr(self, 'shop_npc') and self.shop_npc is not None
-            in_range = False
-            if shop_exists:
-                # consider player near if within 1 tile (Manhattan distance) of the shop NPC
-                player_pos = self.game_manager.player.position if self.game_manager.player else None
-                if player_pos:
-                    px_tile = int(player_pos.x) // GameSettings.TILE_SIZE
-                    py_tile = int(player_pos.y) // GameSettings.TILE_SIZE
-                    sx_tile = int(self.shop_npc.position.x) // GameSettings.TILE_SIZE
-                    sy_tile = int(self.shop_npc.position.y) // GameSettings.TILE_SIZE
-                    manhattan = abs(px_tile - sx_tile) + abs(py_tile - sy_tile)
-                    in_range = manhattan <= 1
-                # proximity check result available in 'in_range'
-            if (input_manager.key_pressed(pg.K_e) or input_manager.key_pressed(pg.K_SPACE)):
-                Logger.info("Detected E/SPACE key press in GameScene.update")
-            if shop_exists and in_range and (input_manager.key_pressed(pg.K_e) or input_manager.key_pressed(pg.K_SPACE)):
-                if hasattr(self, 'shop_overlay') and self.shop_overlay:
-                    Logger.info("Opening shop overlay")
-                    self.shop_overlay.open()
-                    # short-circuit to avoid triggering battle
+            player_pos = self.game_manager.player.position if self.game_manager and self.game_manager.player else None
+            if player_pos:
+                px_tile = int(player_pos.x) // GameSettings.TILE_SIZE
+                py_tile = int(player_pos.y) // GameSettings.TILE_SIZE
+                if (px_tile, py_tile) == getattr(self, 'map_shop_trigger_pos', (19, 32)):
+                    self.show_map_shop_hint = True
+                    if input_manager.key_pressed(pg.K_SPACE) or input_manager.key_down(pg.K_SPACE):
+                        if hasattr(self, 'shop_overlay') and self.shop_overlay:
+                            self.shop_overlay.open()
+                            return
+                else:
+                    self.show_map_shop_hint = False
         except Exception:
-            Logger.info("Exception while checking shop npc interaction")
-            pass
+            self.show_map_shop_hint = False
 
         # Re-enable battle trigger when player is in NPC's facing range and presses E/SPACE.
         # This corresponds to the exclamation state shown by NPC.
@@ -606,6 +601,47 @@ class GameScene(Scene):
             self.navigate_overlay.update(dt)
         
     @override
+    def _open_shop_if_possible(self, force_tile_trigger: bool = False) -> bool:
+        """嘗試開啟商店，成功回傳 True。避免與其他介面衝突。"""
+        try:
+            # 基本檢查
+            if not hasattr(self, 'shop_overlay') or not self.shop_overlay:
+                return False
+            if self.shop_overlay.is_active:
+                return True
+
+            # 其他介面開啟時不進入 shop
+            if getattr(self, 'overlay', None) and self.overlay.is_active:
+                return False
+            if getattr(self, 'backpack_overlay', None) and self.backpack_overlay.is_active:
+                return False
+            if getattr(self, 'navigate_overlay', None) and self.navigate_overlay.is_active:
+                return False
+            if getattr(self, 'chat_overlay', None) and self.chat_overlay.is_active:
+                return False
+
+            ok = False
+            if force_tile_trigger:
+                ok = True
+            else:
+                shop_exists = hasattr(self, 'shop_npc') and self.shop_npc is not None
+                if shop_exists and self.game_manager and self.game_manager.player:
+                    player_pos = self.game_manager.player.position
+                    px_tile = int(player_pos.x) // GameSettings.TILE_SIZE
+                    py_tile = int(player_pos.y) // GameSettings.TILE_SIZE
+                    sx_tile = int(self.shop_npc.position.x) // GameSettings.TILE_SIZE
+                    sy_tile = int(self.shop_npc.position.y) // GameSettings.TILE_SIZE
+                    manhattan = abs(px_tile - sx_tile) + abs(py_tile - sy_tile)
+                    ok = manhattan <= 1
+
+            if not ok:
+                return False
+
+            self.shop_overlay.open()
+            return True
+        except Exception:
+            return False
+
     def draw(self, screen: pg.Surface):
         overlay_active = hasattr(self, "overlay") and self.overlay.is_active
 
@@ -754,9 +790,10 @@ class GameScene(Scene):
             # Check shop trigger
             if (px_tile, py_tile) == self.ice_shop_trigger_pos:
                 self.show_ice_shop_hint = True
-                if input_manager.key_pressed(pg.K_SPACE):
+                if input_manager.key_pressed(pg.K_SPACE) or input_manager.key_down(pg.K_SPACE):
                     if hasattr(self, 'shop_overlay') and self.shop_overlay:
                         self.shop_overlay.open()
+                        return
             else:
                 self.show_ice_shop_hint = False
             
@@ -855,7 +892,7 @@ class GameScene(Scene):
                 hint_text = self.pickup_message
             elif self.show_heal_hint:
                 hint_text = "Press SPACE to heal"
-            elif self.show_ice_shop_hint:
+            elif self.show_ice_shop_hint or getattr(self, 'show_map_shop_hint', False):
                 hint_text = "Press SPACE to shop"
             
             if hint_text:

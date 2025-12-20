@@ -206,174 +206,302 @@ class ShopOverlay:
         # handle close click
         if input_manager.mouse_pressed(1) and self.x_button.collidepoint(input_manager.mouse_pos):
             self.close()
+            return
+        
         # handle buy/sell tab clicks
         if input_manager.mouse_pressed(1):
             if self.buy_rect.collidepoint(input_manager.mouse_pos):
                 self.toggle_tab("buy")
+                return
             if self.sell_rect.collidepoint(input_manager.mouse_pos):
                 self.toggle_tab("sell")
-
-        # handle buy actions via per-item shop button (click the button at the right)
+                return
+        
+        # handle buy actions: clicking shop cart button
         if self.tab == "buy" and input_manager.mouse_pressed(1):
             base_x = self.overlay_rect.x + 60
             base_y = self.overlay_rect.y + 120
             for i, it in enumerate(self.items):
-                # shop button rect placed to the right of the price
-                btn_x = base_x + 420 + 20
+                # shop button rect - must match draw position
+                btn_x = base_x + 450 + 20
                 btn_y = base_y + i * 90 + 16
                 btn_rect = pg.Rect(btn_x, btn_y, 48, 48)
                 if btn_rect.collidepoint(input_manager.mouse_pos):
+                    Logger.info(f"Shop button clicked for item: {it.get('name')}")
                     try:
                         if self.game_scene:
                             gs = self.game_scene
-                            player_money = getattr(gs, 'money', 0)
-                            if player_money >= it['price']:
-                                gs.money = player_money - it['price']
-                                # sync coin count into bag/backpack
-                                try:
-                                    self._sync_coins_with_bag()
-                                except Exception:
-                                    pass
-                                # try to add to Bag if available, otherwise add to BackpackOverlay
-                                bag = getattr(gs, 'bag', None)
-                                added = False
-                                try:
-                                    if bag is not None:
-                                        # prefer an API if present
-                                        if hasattr(bag, 'add_item'):
-                                            try:
-                                                bag.add_item(it['key'], 1)
-                                                added = True
-                                            except Exception:
-                                                added = False
-                                        # fallback to internal _items_data if present
-                                        if not added and hasattr(bag, '_items_data'):
-                                            bag._items_data.append({'name': it.get('name'), 'key': it.get('key'), 'img': it.get('img'), 'count': 1})
-                                            added = True
-                                except Exception:
-                                    added = False
-
-                                # if Bag wasn't available/updated, update BackpackOverlay directly
-                                try:
-                                    if not added and hasattr(gs, 'backpack_overlay') and gs.backpack_overlay is not None:
-                                        items_list = gs.backpack_overlay.get_items() or gs.backpack_overlay.items
-                                        # try to find existing item by key or name
-                                        found = False
-                                        for bk in items_list:
-                                            if ((bk.get('key') or '').lower() == (it.get('key') or '').lower()) or ((bk.get('name') or '').lower() == (it.get('name') or '').lower()):
-                                                bk['count'] = int(bk.get('count', 0)) + 1
-                                                found = True
-                                                break
-                                        if not found:
-                                            try:
-                                                items_list.append({'name': it.get('name'), 'key': it.get('key'), 'img': it.get('img'), 'count': 1})
-                                            except Exception:
-                                                pass
-                                except Exception:
-                                    pass
-
+                            bag = getattr(gs, 'bag', None)
+                            
+                            # get current coins from bag or backpack
+                            current_coins = 0
+                            
+                            # try bag first
+                            if bag and hasattr(bag, '_items_data'):
+                                for item in bag._items_data:
+                                    if (item.get('name') or '').lower() in ('coins', 'coin'):
+                                        current_coins = int(item.get('count', 0))
+                                        Logger.info(f"Found coins in bag: {current_coins}")
+                                        break
+                            
+                            # fallback to backpack_overlay
+                            if current_coins == 0 and hasattr(gs, 'backpack_overlay') and gs.backpack_overlay:
+                                for item in (gs.backpack_overlay.get_items() or []):
+                                    if (item.get('name') or '').lower() in ('coins', 'coin'):
+                                        current_coins = int(item.get('count', 0))
+                                        Logger.info(f"Found coins in backpack: {current_coins}")
+                                        break
+                            
+                            # also check game_scene.money
+                            if current_coins == 0:
+                                current_coins = int(getattr(gs, 'money', 0))
+                                Logger.info(f"Using game_scene.money: {current_coins}")
+                            
+                            Logger.info(f"Item price: {it['price']}, Current coins: {current_coins}")
+                            
+                            # check if enough money
+                            if current_coins >= it['price']:
+                                new_coin_count = current_coins - it['price']
+                                
+                                # deduct coins from bag
+                                coin_updated = False
+                                if bag and hasattr(bag, '_items_data'):
+                                    for item in bag._items_data:
+                                        if (item.get('name') or '').lower() in ('coins', 'coin'):
+                                            item['count'] = new_coin_count
+                                            coin_updated = True
+                                            Logger.info(f"Updated coins in bag to {new_coin_count}")
+                                            break
+                                
+                                # also update backpack if exists
+                                if hasattr(gs, 'backpack_overlay') and gs.backpack_overlay:
+                                    for item in (gs.backpack_overlay.get_items() or gs.backpack_overlay.items or []):
+                                        if (item.get('name') or '').lower() in ('coins', 'coin'):
+                                            item['count'] = new_coin_count
+                                            Logger.info(f"Updated coins in backpack to {new_coin_count}")
+                                            break
+                                
+                                # update game_scene money
+                                gs.money = new_coin_count
+                                
+                                # add purchased item to bag
+                                if bag and hasattr(bag, '_items_data'):
+                                    found = False
+                                    item_key = (it.get('key') or '').lower()
+                                    item_name = (it.get('name') or '').lower()
+                                    for item in bag._items_data:
+                                        # 同时检查 key 和 name，任一匹配即视为同一物品
+                                        existing_key = (item.get('key') or '').lower()
+                                        existing_name = (item.get('name') or '').lower()
+                                        if (item_key and existing_key == item_key) or (item_name and existing_name == item_name):
+                                            item['count'] = int(item.get('count', 0)) + 1
+                                            found = True
+                                            Logger.info(f"Incremented item count for {it.get('name')} (key: {it.get('key')})")
+                                            break
+                                    if not found:
+                                        bag._items_data.append({
+                                            'name': it.get('name'),
+                                            'key': it.get('key'),
+                                            'img': it.get('img'),
+                                            'count': 1
+                                        })
+                                        Logger.info(f"Added new item to bag: {it.get('name')} (key: {it.get('key')})")
+                                
+                                # also add to backpack_overlay
+                                if hasattr(gs, 'backpack_overlay') and gs.backpack_overlay:
+                                    bp_items = gs.backpack_overlay.get_items() or gs.backpack_overlay.items or []
+                                    found = False
+                                    item_key = (it.get('key') or '').lower()
+                                    item_name = (it.get('name') or '').lower()
+                                    for item in bp_items:
+                                        # 同时检查 key 和 name，任一匹配即视为同一物品
+                                        existing_key = (item.get('key') or '').lower()
+                                        existing_name = (item.get('name') or '').lower()
+                                        if (item_key and existing_key == item_key) or (item_name and existing_name == item_name):
+                                            item['count'] = int(item.get('count', 0)) + 1
+                                            found = True
+                                            break
+                                    if not found:
+                                        bp_items.append({
+                                            'name': it.get('name'),
+                                            'key': it.get('key'),
+                                            'img': it.get('img'),
+                                            'count': 1
+                                        })
+                                
                                 Logger.info(f"Bought {it['key']} for {it['price']}")
+                                return
                             else:
+                                # not enough money
+                                self.hint_text = '錢不夠'
+                                self.hint_expire = pg.time.get_ticks() + self.hint_duration
                                 Logger.info("Not enough money to buy")
-                    except Exception:
-                        pass
-
-        # handle sell actions: clicking the same-position buttons will sell
+                                return
+                    except Exception as e:
+                        Logger.error(f"Buy error: {e}")
+                        import traceback
+                        traceback.print_exc()
+        
+        # handle sell actions: clicking shop cart button
         if self.tab == "sell" and input_manager.mouse_pressed(1):
             base_x = self.overlay_rect.x + 60
             base_y = self.overlay_rect.y + 120
-            # collect monsters and items (exclude coins)
-            monsters = []
-            items = []
-            try:
-                if self.game_scene and hasattr(self.game_scene, 'backpack_overlay'):
-                    monsters = self.game_scene.backpack_overlay.get_monsters() or []
-                    items = [it for it in (self.game_scene.backpack_overlay.get_items() or []) if (it.get('name') or '').lower() not in ('coins','coin')]
-            except Exception:
-                monsters = []
-                items = []
-
-            # build price lookup for buy prices
+            
+            # prepare price lookup from shop buy prices
             price_lookup = {}
             for si in self.items:
                 if si.get('key'):
                     price_lookup[si.get('key').lower()] = si.get('price', 0)
                 if si.get('name'):
                     price_lookup[si.get('name').lower()] = si.get('price', 0)
-
-            # sell monsters: fixed price 100
-            for i, m in enumerate(monsters):
-                btn_x = base_x + 420 + 20
-                btn_y = base_y + i * 90 + 16
+            
+            # collect monsters and items (excluding coins)
+            monsters = []
+            items = []
+            try:
+                if self.game_scene and hasattr(self.game_scene, 'backpack_overlay'):
+                    monsters = self.game_scene.backpack_overlay.get_monsters() or []
+                    items = [it for it in (self.game_scene.backpack_overlay.get_items() or []) if (it.get('name') or '').lower() not in ('coins', 'coin')]
+            except Exception:
+                monsters = []
+                items = []
+            
+            # combined list: monsters then items
+            combined = []
+            for m in monsters:
+                combined.append(('monster', m))
+            for it in items:
+                combined.append(('item', it))
+            
+            # check each item/monster for button clicks
+            row_h = 90
+            col_w = 450 + 20
+            for idx, entry in enumerate(combined):
+                col = 0 if idx < 6 else 1
+                row = idx if idx < 6 else idx - 6
+                draw_x = base_x + col * col_w
+                if col == 1:
+                    draw_x += 65
+                draw_y = base_y + row * row_h
+                
+                # shop button position
+                btn_x = draw_x + 450 + 20
+                btn_y = draw_y + 16
                 btn_rect = pg.Rect(btn_x, btn_y, 48, 48)
+                
                 if btn_rect.collidepoint(input_manager.mouse_pos):
+                    kind, data = entry
+                    Logger.info(f"Sell button clicked for {kind}: {data.get('name')}")
+                    
                     try:
                         if self.game_scene:
                             gs = self.game_scene
-                            # do not allow selling if this is the player's last monster
-                            try:
+                            
+                            if kind == 'monster':
+                                # check if last monster
                                 if len(monsters) <= 1:
-                                    # set hint text and expiry
                                     self.hint_text = '你只剩一個怪物了不能賣'
                                     self.hint_expire = pg.time.get_ticks() + self.hint_duration
-                                    # do not perform sell
-                                    continue
-                            except Exception:
-                                pass
+                                    Logger.info("Cannot sell last monster")
+                                    return
+                                
+                                # sell monster for fixed price 100
+                                sell_price = 100
+                                
+                                # add coins to bag
+                                bag = getattr(gs, 'bag', None)
+                                if bag and hasattr(bag, '_items_data'):
+                                    for item in bag._items_data:
+                                        if (item.get('name') or '').lower() in ('coins', 'coin'):
+                                            item['count'] = int(item.get('count', 0)) + sell_price
+                                            Logger.info(f"Added {sell_price} coins to bag")
+                                            break
+                                
+                                # also update backpack
+                                if hasattr(gs, 'backpack_overlay') and gs.backpack_overlay:
+                                    for item in (gs.backpack_overlay.get_items() or gs.backpack_overlay.items or []):
+                                        if (item.get('name') or '').lower() in ('coins', 'coin'):
+                                            item['count'] = int(item.get('count', 0)) + sell_price
+                                            Logger.info(f"Added {sell_price} coins to backpack")
+                                            break
+                                
+                                # update game_scene money
+                                gs.money = int(getattr(gs, 'money', 0)) + sell_price
+                                
+                                # remove monster from backpack
+                                monster_idx = combined[:idx].count(('monster', m) for m in monsters if m == data)
+                                actual_idx = monsters.index(data)
+                                if hasattr(gs, 'backpack_overlay') and gs.backpack_overlay:
+                                    try:
+                                        gs.backpack_overlay.monsters.pop(actual_idx)
+                                        Logger.info(f"Removed monster {data.get('name')} from backpack")
+                                    except Exception as e:
+                                        Logger.error(f"Failed to remove monster: {e}")
+                                
+                                Logger.info(f"Sold monster {data.get('name')} for {sell_price}")
+                                return
+                            
+                            elif kind == 'item':
+                                # get sell price (half of buy price)
+                                item_key = (data.get('key') or data.get('name') or '').lower()
+                                buy_price = price_lookup.get(item_key, 0)
+                                sell_price = int(buy_price / 2) if buy_price > 0 else 0
+                                
+                                # add coins to bag
+                                bag = getattr(gs, 'bag', None)
+                                if bag and hasattr(bag, '_items_data'):
+                                    for item in bag._items_data:
+                                        if (item.get('name') or '').lower() in ('coins', 'coin'):
+                                            item['count'] = int(item.get('count', 0)) + sell_price
+                                            Logger.info(f"Added {sell_price} coins to bag")
+                                            break
+                                
+                                # also update backpack
+                                if hasattr(gs, 'backpack_overlay') and gs.backpack_overlay:
+                                    for item in (gs.backpack_overlay.get_items() or gs.backpack_overlay.items or []):
+                                        if (item.get('name') or '').lower() in ('coins', 'coin'):
+                                            item['count'] = int(item.get('count', 0)) + sell_price
+                                            Logger.info(f"Added {sell_price} coins to backpack")
+                                            break
+                                
+                                # update game_scene money
+                                gs.money = int(getattr(gs, 'money', 0)) + sell_price
+                                
+                                # decrement item count in bag
+                                if bag and hasattr(bag, '_items_data'):
+                                    for item in bag._items_data:
+                                        if (item.get('key') or '').lower() == item_key or (item.get('name') or '').lower() == item_key:
+                                            current_count = int(item.get('count', 0))
+                                            if current_count > 1:
+                                                item['count'] = current_count - 1
+                                                Logger.info(f"Decremented item count to {item['count']}")
+                                            else:
+                                                bag._items_data.remove(item)
+                                                Logger.info(f"Removed item {item.get('name')} from bag")
+                                            break
+                                
+                                # decrement item count in backpack
+                                if hasattr(gs, 'backpack_overlay') and gs.backpack_overlay:
+                                    for item in (gs.backpack_overlay.get_items() or gs.backpack_overlay.items or []):
+                                        if (item.get('key') or '').lower() == item_key or (item.get('name') or '').lower() == item_key:
+                                            current_count = int(item.get('count', 0))
+                                            if current_count > 1:
+                                                item['count'] = current_count - 1
+                                            else:
+                                                try:
+                                                    (gs.backpack_overlay.get_items() or gs.backpack_overlay.items).remove(item)
+                                                except:
+                                                    pass
+                                            break
+                                
+                                Logger.info(f"Sold item {data.get('name')} for {sell_price}")
+                                return
+                    
+                    except Exception as e:
+                        Logger.error(f"Sell error: {e}")
+                        import traceback
+                        traceback.print_exc()
 
-                            gs.money = getattr(gs, 'money', 0) + 100
-                            # sync coin count into bag/backpack
-                            try:
-                                self._sync_coins_with_bag()
-                            except Exception:
-                                pass
-                            # remove the monster from backpack
-                            try:
-                                gs.backpack_overlay.monsters.pop(i)
-                            except Exception:
-                                pass
-                            Logger.info(f"Sold monster {m.get('name')} for 100")
-                    except Exception:
-                        pass
-
-            # sell items: price = half of buy price, decrement count and remove if zero
-            start_idx = len(monsters)
-            for j, it in enumerate(items):
-                i = start_idx + j
-                btn_x = base_x + 420 + 20
-                btn_y = base_y + i * 90 + 16
-                btn_rect = pg.Rect(btn_x, btn_y, 48, 48)
-                if btn_rect.collidepoint(input_manager.mouse_pos):
-                    try:
-                        it_name = (it.get('name') or '').lower()
-                        buy_p = price_lookup.get(it_name, None)
-                        sell_p = int(buy_p / 2) if buy_p is not None else 0
-                        if self.game_scene:
-                            gs = self.game_scene
-                            gs.money = getattr(gs, 'money', 0) + sell_p
-                            # sync coin count into bag/backpack
-                            try:
-                                self._sync_coins_with_bag()
-                            except Exception:
-                                pass
-                            # find and decrement in backpack items
-                            try:
-                                for bk in gs.backpack_overlay.items:
-                                    if (bk.get('name') or '').lower() == it_name:
-                                        bk['count'] = max(0, int(bk.get('count', 0)) - 1)
-                                        if bk['count'] <= 0:
-                                            try:
-                                                gs.backpack_overlay.items.remove(bk)
-                                            except Exception:
-                                                pass
-                                        break
-                            except Exception:
-                                pass
-                            Logger.info(f"Sold item {it.get('name')} for {sell_p}")
-                    except Exception:
-                        pass
-
-        # sell functionality removed per request
 
     def draw(self, screen):
         if not self.is_active:

@@ -28,6 +28,62 @@ class NavigateOverlay:
         參數:
             game_scene: 遊戲場景，用於存取玩家、地圖等
         """
+        self.game_scene = game_scene
+        self.is_active = False
+        
+        # ===== 界面佈局設定 =====
+        overlay_w, overlay_h = 900, 520
+        overlay_x = (GameSettings.SCREEN_WIDTH - overlay_w) // 2    # 水平居中
+        overlay_y = (GameSettings.SCREEN_HEIGHT - overlay_h) // 2   # 垂直居中
+        self.overlay_rect = pg.Rect(overlay_x, overlay_y, overlay_w, overlay_h)
+        self.bg_color = (255, 165, 48)
+        self.border_color = (0, 0, 0)
+        
+        # ===== 關閉按鈕 (X 按鈕) =====
+        self.x_button = Button(
+            "UI/button_x.png", "UI/button_x_hover.png",
+            self.overlay_rect.right - 50,          # 右上角
+            self.overlay_rect.top + 10,
+            40, 40,
+            on_click=self.close
+        )
+        
+        # ===== 導航按鈕佈局 =====
+        btn_w, btn_h = 120, 120                    # 按鈕尺寸
+        btn_gap = 30                               # 按鈕間距
+        btn_x = self.overlay_rect.x + 40           # 左邊距 40px
+        btn_y = self.overlay_rect.y + 60           # 上邊距 60px
+        
+        # Start 按鈕
+        self.start_button = Button(
+            "UI/button_play.png", "UI/button_play_hover.png",
+            btn_x, btn_y, btn_w, btn_h,
+            on_click=self._goto_start
+        )
+        
+        # Gym 按鈕
+        self.gym_button = Button(
+            "UI/button_play.png", "UI/button_play_hover.png",
+            btn_x + btn_w + btn_gap, btn_y,        # 向右排列
+            btn_w, btn_h,
+            on_click=self._goto_gym
+        )
+        
+        # Shop 按鈕
+        self.shop_button = Button(
+            "UI/button_play.png", "UI/button_play_hover.png",
+            btn_x + (btn_w + btn_gap) * 2, btn_y,  # 向右排列
+            btn_w, btn_h,
+            on_click=self._goto_shop
+        )
+        
+        # Heal 按鈕
+        self.heal_button = Button(
+            "UI/button_play.png", "UI/button_play_hover.png",
+            btn_x + (btn_w + btn_gap) * 3, btn_y,  # 向右排列
+            btn_w, btn_h,
+            on_click=self._goto_heal
+        )
     
     def _bfs_find_path(self, start_tile, goal_tile, current_map):
         """
